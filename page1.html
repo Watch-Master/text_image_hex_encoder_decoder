@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIXELTEXT // Codec</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --bg:        #080c10;
+    --panel:     #0d1117;
+    --border:    #1a2535;
+    --accent:    #00ffe7;
+    --accent2:   #ff4f6a;
+    --accent3:   #f0c030;
+    --text:      #c8d8e8;
+    --dim:       #445566;
+    --glow:      0 0 12px rgba(0,255,231,0.35);
+    --glow2:     0 0 12px rgba(255,79,106,0.35);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  header {
+    padding: 28px 40px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    background: linear-gradient(180deg, #0b1520 0%, transparent 100%);
+  }
+
+  header h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.9rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    text-shadow: var(--glow);
+  }
+
+  header .subtitle {
+    font-size: 0.75rem;
+    color: var(--dim);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: calc(100vh - 80px);
+  }
+
+  /* ── Panel ── */
+  .panel {
+    padding: 30px 32px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .panel:last-child { border-right: none; }
+
+  .panel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .panel-title.enc { color: var(--accent); }
+  .panel-title.dec { color: var(--accent2); }
+
+  .panel-title::before {
+    content: '';
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+  }
+
+  /* ── Textarea ── */
+  textarea {
+    background: #040608;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    padding: 14px;
+    resize: vertical;
+    min-height: 120px;
+    outline: none;
+    transition: border-color 0.2s;
+    line-height: 1.6;
+  }
+  textarea:focus { border-color: var(--accent); box-shadow: var(--glow); }
+  textarea.dec:focus { border-color: var(--accent2); box-shadow: var(--glow2); }
+  textarea::placeholder { color: var(--dim); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 22px;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.06);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .btn:hover::after { opacity: 1; }
+  .btn:active { transform: scale(0.97); }
+
+  .btn-enc {
+    background: var(--accent);
+    color: #000;
+    box-shadow: var(--glow);
+  }
+  .btn-enc:hover { box-shadow: 0 0 20px rgba(0,255,231,0.6); }
+
+  .btn-dec {
+    background: var(--accent2);
+    color: #fff;
+    box-shadow: var(--glow2);
+  }
+  .btn-dec:hover { box-shadow: 0 0 20px rgba(255,79,106,0.6); }
+
+  .btn-dl {
+    background: transparent;
+    color: var(--accent3);
+    border: 1px solid var(--accent3);
+    font-size: 0.62rem;
+  }
+  .btn-dl:hover { background: rgba(240,192,48,0.08); }
+
+  .btn-clr {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--border);
+    font-size: 0.62rem;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Canvas area ── */
+  .canvas-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    background: #040608;
+    border: 1px solid var(--border);
+    padding: 20px;
+    min-height: 200px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .canvas-wrap .empty-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--dim);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .canvas-wrap canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    max-width: 100%;
+    display: block;
+  }
+
+  /* scaled display canvas */
+  #displayCanvas {
+    border: 1px solid var(--border);
+  }
+
+  /* ── Stats bar ── */
+  .stats {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 0.72rem;
+    color: var(--dim);
+  }
+  .stat { display: flex; gap: 6px; }
+  .stat-val { color: var(--accent3); }
+  .stat-val.red { color: var(--accent2); }
+
+  /* ── Hex preview ── */
+  .hex-preview {
+    font-size: 0.7rem;
+    color: var(--dim);
+    word-break: break-all;
+    background: #040608;
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    max-height: 70px;
+    overflow-y: auto;
+    line-height: 1.7;
+    letter-spacing: 0.04em;
+  }
+  .hex-preview span { color: var(--accent); }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 1px dashed var(--border);
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.75rem;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    position: relative;
+  }
+  .upload-zone:hover { border-color: var(--accent2); color: var(--accent2); }
+  .upload-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+
+  /* ── Section label ── */
+  .sec-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Zoom slider ── */
+  .zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.7rem;
+    color: var(--dim);
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    background: var(--border);
+    height: 3px;
+    border-radius: 2px;
+    flex: 1;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  /* ── Error / success ── */
+  .msg {
+    font-size: 0.72rem;
+    padding: 8px 12px;
+    border-left: 3px solid;
+  }
+  .msg.ok  { border-color: var(--accent);  color: var(--accent);  background: rgba(0,255,231,0.04); }
+  .msg.err { border-color: var(--accent2); color: var(--accent2); background: rgba(255,79,106,0.04); }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    .panel { border-right: none; border-bottom: 1px solid var(--border); }
+    header h1 { font-size: 1.3rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PIXELTEXT</h1>
+  <span class="subtitle">Text ↔ Image Codec // RGB Pixel Encoding</span>
+</header>
+
+<div class="app">
+
+  <!-- ════════════ ENCODE ════════════ -->
+  <div class="panel">
+    <div class="panel-title enc">Encode — Text → Image</div>
+
+    <div class="sec-label">Input text</div>
+    <textarea id="encInput" rows="5" placeholder="Type or paste any text here…"></textarea>
+
+    <div class="sec-label">Hex stream preview</div>
+    <div class="hex-preview" id="hexPreview">
+      <span style="color:var(--dim)">— hex will appear as you type —</span>
+    </div>
+
+    <div class="stats" id="encStats" style="display:none">
+      <div class="stat">Chars <span class="stat-val" id="statChars">0</span></div>
+      <div class="stat">Hex digits <span class="stat-val" id="statHex">0</span></div>
+      <div class="stat">Pixels <span class="stat-val" id="statPx">0</span></div>
+      <div class="stat">Grid <span class="stat-val" id="statGrid">0×0</span></div>
+      <div class="stat">Padding <span class="stat-val red" id="statPad">0</span> px</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-enc" onclick="encode()">▶ Encode to Image</button>
+      <button class="btn btn-clr" onclick="clearEnc()">✕ Clear</button>
+    </div>
+
+    <div class="sec-label">Output image (pixelated → scaled)</div>
+    <div class="zoom-row">
+      <span>Zoom</span>
+      <input type="range" id="zoomSlider" min="1" max="64" value="16" oninput="updateZoom()">
+      <span id="zoomVal">16×</span>
+    </div>
+
+    <div class="canvas-wrap" id="encWrap">
+      <div class="empty-msg" id="encEmpty">
+        <span style="font-size:1.5rem">⬡</span>
+        <span>Image will appear here</span>
+      </div>
+      <canvas id="displayCanvas" style="display:none"></canvas>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-dl" id="dlBtn" style="display:none" onclick="downloadImage()">↓ Download PNG</button>
+    </div>
+
+    <div id="encMsg" style="display:none"></div>
+  </div>
+
+  <!-- ════════════ DECODE ════════════ -->
+  <div class="panel">
+    <div class="panel-title dec">Decode — Image → Text</div>
+
+    <div class="sec-label">Upload encoded image</div>
+    <div class="upload-zone" id="dropZone">
+      <input type="file" accept="image/*" id="imgUpload" onchange="handleUpload(event)">
+      <div>⊕ Drop or click to upload a PIXELTEXT image</div>
+      <div style="font-size:0.65rem;margin-top:6px;color:var(--border)">PNG recommended for lossless decoding</div>
+    </div>
+
+    <div class="sec-label">Decoded image preview</div>
+    <div class="canvas-wrap" id="decPreviewWrap" style="min-height:100px">
+      <div class="empty-msg" id="decEmpty">
+        <span style="font-size:1.5rem">⬡</span>
+        <span>Upload image to decode</span>
+      </div>
+      <canvas id="decCanvas" style="display:none; max-height:180px; object-fit:contain;"></canvas>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-dec" onclick="decode()">▶ Decode to Text</button>
+      <button class="btn btn-clr" onclick="clearDec()">✕ Clear</button>
+    </div>
+
+    <div class="stats" id="decStats" style="display:none">
+      <div class="stat">Pixels read <span class="stat-val" id="dStatPx">0</span></div>
+      <div class="stat">Hex digits <span class="stat-val" id="dStatHex">0</span></div>
+      <div class="stat">Chars recovered <span class="stat-val" id="dStatChars">0</span></div>
+    </div>
+
+    <div class="sec-label">Recovered text</div>
+    <textarea id="decOutput" class="dec" rows="7" placeholder="Decoded text will appear here…" readonly></textarea>
+
+    <div id="decMsg" style="display:none"></div>
+
+    <div class="divider"></div>
+
+    <!-- Explainer -->
+    <div style="font-size:0.68rem; color:var(--dim); line-height:1.9; letter-spacing:0.04em">
+      <div style="color:var(--accent3); font-family:'Orbitron',monospace; font-size:0.6rem; letter-spacing:0.2em; margin-bottom:6px">HOW IT WORKS</div>
+      <div>① Text is converted to UTF-8 bytes → hex string</div>
+      <div>② Hex is split into 6-digit blocks → <span style="color:var(--accent)">#RRGGBB</span> colour codes</div>
+      <div>③ Remaining space padded with <span style="color:var(--accent2)">#000000</span> (black)</div>
+      <div>④ Each code becomes one pixel in a square 1:1 image</div>
+      <div>⑤ Decode reverses: pixels → hex → bytes → text</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Hidden raw canvas -->
+<canvas id="rawCanvas" style="display:none"></canvas>
+
+<script>
+// ─────────────────────────────────────────────────────
+// Shared state
+// ─────────────────────────────────────────────────────
+let rawImageData = null;   // ImageData of the raw 1px-per-pixel canvas
+let rawSize      = 0;      // side length in pixels
+let uploadedImage = null;  // Image element for decode
+
+// ─────────────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────────────
+function textToHex(text) {
+  const bytes = new TextEncoder().encode(text);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToText(hex) {
+  // strip anything not hex
+  hex = hex.replace(/[^0-9a-fA-F]/g, '');
+  const bytes = [];
+  for (let i = 0; i < hex.length - 1; i += 2) {
+    const val = parseInt(hex.slice(i, i + 2), 16);
+    if (val !== 0) bytes.push(val);           // strip trailing nulls
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+function hexToColors(hexStr) {
+  const colors = [];
+  // ensure even length padding
+  if (hexStr.length % 2 !== 0) hexStr += '0';
+  // pad to multiple of 6
+  while (hexStr.length % 6 !== 0) hexStr += '0';
+  for (let i = 0; i < hexStr.length; i += 6) {
+    colors.push(hexStr.slice(i, i + 6));
+  }
+  return colors;
+}
+
+function squareSide(numPixels) {
+  return Math.ceil(Math.sqrt(numPixels));
+}
+
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  el.className = 'msg ' + type;
+  el.textContent = text;
+  el.style.display = 'block';
+}
+function hideMsg(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+// ─────────────────────────────────────────────────────
+// LIVE HEX PREVIEW
+// ─────────────────────────────────────────────────────
+const encInput = document.getElementById('encInput');
+encInput.addEventListener('input', livePreview);
+
+function livePreview() {
+  const text = encInput.value;
+  const hp   = document.getElementById('hexPreview');
+  const stats = document.getElementById('encStats');
+
+  if (!text) {
+    hp.innerHTML = '<span style="color:var(--dim)">— hex will appear as you type —</span>';
+    stats.style.display = 'none';
+    return;
+  }
+
+  const hex    = textToHex(text);
+  const colors = hexToColors(hex);
+  const side   = squareSide(colors.length);
+  const total  = side * side;
+  const pad    = total - colors.length;
+
+  // Show coloured hex blocks
+  let html = '';
+  for (let i = 0; i < Math.min(colors.length, 60); i++) {
+    html += `<span style="color:#${colors[i]}">${colors[i]}</span> `;
+  }
+  if (colors.length > 60) html += `<span style="color:var(--dim)">…+${colors.length-60} more</span>`;
+  hp.innerHTML = html;
+
+  // Stats
+  stats.style.display = 'flex';
+  document.getElementById('statChars').textContent = text.length;
+  document.getElementById('statHex').textContent   = hex.length;
+  document.getElementById('statPx').textContent    = colors.length;
+  document.getElementById('statGrid').textContent  = `${side}×${side}`;
+  document.getElementById('statPad').textContent   = pad;
+}
+
+// ─────────────────────────────────────────────────────
+// ENCODE
+// ─────────────────────────────────────────────────────
+function encode() {
+  hideMsg('encMsg');
+  const text = encInput.value;
+  if (!text.trim()) { showMsg('encMsg','No input text.','err'); return; }
+
+  const hex    = textToHex(text);
+  const colors = hexToColors(hex);
+  const side   = squareSide(colors.length);
+  const total  = side * side;
+
+  // Pad to square
+  while (colors.length < total) colors.push('000000');
+
+  rawSize = side;
+
+  // Draw to raw canvas (1px per pixel)
+  const raw = document.getElementById('rawCanvas');
+  raw.width  = side;
+  raw.height = side;
+  const ctx  = raw.getContext('2d');
+  const imgd = ctx.createImageData(side, side);
+
+  for (let i = 0; i < colors.length; i++) {
+    const c = colors[i];
+    const r = parseInt(c.slice(0,2),16);
+    const g = parseInt(c.slice(2,4),16);
+    const b = parseInt(c.slice(4,6),16);
+    imgd.data[i*4+0] = r;
+    imgd.data[i*4+1] = g;
+    imgd.data[i*4+2] = b;
+    imgd.data[i*4+3] = 255;
+  }
+
+  ctx.putImageData(imgd, 0, 0);
+  rawImageData = imgd;
+
+  // Render scaled display
+  renderScaled();
+
+  document.getElementById('encEmpty').style.display  = 'none';
+  document.getElementById('displayCanvas').style.display = 'block';
+  document.getElementById('dlBtn').style.display     = 'inline-flex';
+
+  showMsg('encMsg', `✓ Encoded ${text.length} chars → ${side}×${side} px image (${colors.length - (side*side - colors.length)} data px, ${side*side - colors.length} pad px)`, 'ok');
+
+  // Re-run stats
+  livePreview();
+}
+
+function renderScaled() {
+  if (!rawImageData) return;
+  const zoom = parseInt(document.getElementById('zoomSlider').value);
+  const dc   = document.getElementById('displayCanvas');
+  dc.width   = rawSize * zoom;
+  dc.height  = rawSize * zoom;
+  const dctx = dc.getContext('2d');
+  dctx.imageSmoothingEnabled = false;
+
+  // Put raw data to temp canvas, then scale-draw
+  const tmp  = document.getElementById('rawCanvas');
+  dctx.drawImage(tmp, 0, 0, dc.width, dc.height);
+}
+
+function updateZoom() {
+  const v = document.getElementById('zoomSlider').value;
+  document.getElementById('zoomVal').textContent = v + '×';
+  renderScaled();
+}
+
+function downloadImage() {
+  const raw  = document.getElementById('rawCanvas');
+  const link = document.createElement('a');
+  link.download = 'pixeltext_encoded.png';
+  link.href = raw.toDataURL('image/png');
+  link.click();
+}
+
+function clearEnc() {
+  encInput.value = '';
+  document.getElementById('hexPreview').innerHTML = '<span style="color:var(--dim)">— hex will appear as you type —</span>';
+  document.getElementById('encStats').style.display  = 'none';
+  document.getElementById('encEmpty').style.display  = 'flex';
+  document.getElementById('displayCanvas').style.display = 'none';
+  document.getElementById('dlBtn').style.display     = 'none';
+  rawImageData = null;
+  hideMsg('encMsg');
+}
+
+// ─────────────────────────────────────────────────────
+// DECODE
+// ─────────────────────────────────────────────────────
+function handleUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const url  = URL.createObjectURL(file);
+  const img  = new Image();
+  img.onload = () => {
+    uploadedImage = img;
+    // Show preview
+    const dc   = document.getElementById('decCanvas');
+    const side = Math.min(img.width, img.height, 300);
+    const scale = side / img.width;
+    dc.width   = img.width  * scale;
+    dc.height  = img.height * scale;
+    const ctx  = dc.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, dc.width, dc.height);
+    document.getElementById('decEmpty').style.display  = 'none';
+    document.getElementById('decCanvas').style.display = 'block';
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+function decode() {
+  hideMsg('decMsg');
+  if (!uploadedImage) { showMsg('decMsg','No image uploaded.','err'); return; }
+
+  const img  = uploadedImage;
+  const tmp  = document.createElement('canvas');
+  tmp.width  = img.width;
+  tmp.height = img.height;
+  const ctx  = tmp.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 0, 0);
+
+  const data = ctx.getImageData(0, 0, img.width, img.height).data;
+  const totalPixels = img.width * img.height;
+
+  let hexStr = '';
+  for (let i = 0; i < totalPixels; i++) {
+    const r = data[i*4+0].toString(16).padStart(2,'0');
+    const g = data[i*4+1].toString(16).padStart(2,'0');
+    const b = data[i*4+2].toString(16).padStart(2,'0');
+    hexStr += r + g + b;
+  }
+
+  let text = '';
+  try {
+    text = hexToText(hexStr);
+  } catch(e) {
+    showMsg('decMsg','⚠ Could not decode — image may not be a PIXELTEXT file.','err');
+    return;
+  }
+
+  if (!text) {
+    showMsg('decMsg','⚠ No readable text found. Is this a PIXELTEXT-encoded PNG?','err');
+    return;
+  }
+
+  document.getElementById('decOutput').value = text;
+
+  // Stats
+  const ds = document.getElementById('decStats');
+  ds.style.display = 'flex';
+  document.getElementById('dStatPx').textContent    = totalPixels;
+  document.getElementById('dStatHex').textContent   = hexStr.length;
+  document.getElementById('dStatChars').textContent = text.length;
+
+  showMsg('decMsg', `✓ Decoded ${totalPixels} pixels → ${text.length} characters`, 'ok');
+}
+
+function clearDec() {
+  document.getElementById('imgUpload').value   = '';
+  document.getElementById('decOutput').value   = '';
+  document.getElementById('decEmpty').style.display  = 'flex';
+  document.getElementById('decCanvas').style.display = 'none';
+  document.getElementById('decStats').style.display  = 'none';
+  uploadedImage = null;
+  hideMsg('decMsg');
+}
+
+// Drag-and-drop on upload zone
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor='var(--accent2)'; });
+dz.addEventListener('dragleave', () => { dz.style.borderColor=''; });
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.style.borderColor = '';
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    document.getElementById('imgUpload').files = e.dataTransfer.files;
+    handleUpload({ target: { files: [file] } });
+  }
+});
+</script>
+</body>
+</html>
